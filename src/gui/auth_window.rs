@@ -16,6 +16,8 @@ pub struct AuthWindow {
     confirm_password: String,
     error_message: String,
     user_manager: UserManager,
+    show_reset_confirmation: bool,
+    reset_confirmation_text: String,
 }
 
 impl Default for AuthWindow {
@@ -27,6 +29,8 @@ impl Default for AuthWindow {
             confirm_password: String::new(),
             error_message: String::new(),
             user_manager: UserManager::new(),
+            show_reset_confirmation: false,
+            reset_confirmation_text: String::new(),
         }
     }
 }
@@ -89,8 +93,55 @@ impl AuthWindow {
                     ui.add_space(10.0);
                     ui.colored_label(egui::Color32::RED, &self.error_message);
                 }
+                
+                ui.add_space(20.0);
+                ui.separator();
+                ui.add_space(10.0);
+                
+                if ui.button("🔄 Reset Application").clicked() {
+                    self.show_reset_confirmation = true;
+                    self.reset_confirmation_text.clear();
+                }
             });
         });
+        
+        // Reset confirmation dialog
+        if self.show_reset_confirmation {
+            egui::Window::new("⚠️ Reset Application")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.vertical(|ui| {
+                        ui.label("⚠️ WARNING: This will permanently delete ALL data!");
+                        ui.add_space(10.0);
+                        
+                        ui.label("This includes:");
+                        ui.label("• All user accounts");
+                        ui.label("• All password vaults");
+                        ui.label("• Security logs");
+                        ui.add_space(10.0);
+                        
+                        ui.label("Type 'RESET' to confirm:");
+                        ui.text_edit_singleline(&mut self.reset_confirmation_text);
+                        ui.add_space(10.0);
+                        
+                        ui.horizontal(|ui| {
+                            if ui.button("Cancel").clicked() {
+                                self.show_reset_confirmation = false;
+                                self.reset_confirmation_text.clear();
+                            }
+                            
+                            let reset_enabled = self.reset_confirmation_text == "RESET";
+                            if ui.add_enabled(reset_enabled, egui::Button::new("🔄 Reset")).clicked() {
+                                self.perform_reset(security_logger);
+                                self.show_reset_confirmation = false;
+                                self.reset_confirmation_text.clear();
+                            }
+                        });
+                    });
+                });
+        }
         
         user_result
     }
@@ -177,5 +228,46 @@ impl AuthWindow {
                 None
             }
         }
+    }
+    
+    fn perform_reset(&mut self, security_logger: &SecurityLogger) {
+        security_logger.log_event("RESET_INITIATED", None, true, "Application reset initiated from GUI");
+        
+        let mut files_removed = 0;
+        
+        // Remove users.json
+        if std::path::Path::new("users.json").exists() {
+            let _ = std::fs::remove_file("users.json");
+            files_removed += 1;
+        }
+        
+        // Remove all vault files (*.dat)
+        if let Ok(entries) = std::fs::read_dir(".") {
+            for entry in entries.flatten() {
+                if let Some(filename) = entry.file_name().to_str() {
+                    if filename.ends_with(".dat") {
+                        let _ = std::fs::remove_file(&entry.path());
+                        files_removed += 1;
+                    }
+                }
+            }
+        }
+        
+        // Remove security.log
+        if std::path::Path::new("security.log").exists() {
+            let _ = std::fs::remove_file("security.log");
+            files_removed += 1;
+        }
+        
+        // Reset the auth window state
+        self.username.clear();
+        self.password.zeroize();
+        self.confirm_password.zeroize();
+        self.error_message = format!("✅ Reset complete! Application returned to initial state.");
+        self.user_manager = UserManager::new();
+        
+        // Log the completion (this will create a new log file)
+        let final_logger = SecurityLogger::new();
+        final_logger.log_event("RESET_COMPLETED", None, true, &format!("Application reset completed from GUI, {} files removed", files_removed));
     }
 }

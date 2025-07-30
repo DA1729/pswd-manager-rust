@@ -278,6 +278,90 @@ fn login_user(rate_limiter: &mut RateLimiter, security_logger: &SecurityLogger) 
     Err("Login failed".to_string())
 }
 
+fn reset_application(security_logger: &SecurityLogger) {
+    println!("⚠️  WARNING: This will permanently delete ALL user data!");
+    println!("This includes:");
+    println!("- All user accounts");
+    println!("- All password vaults");
+    println!("- Security logs");
+    println!();
+    println!("Type 'RESET' (all caps) to confirm, or anything else to cancel:");
+    
+    let mut confirmation = String::new();
+    if io::stdin().read_line(&mut confirmation).is_err() {
+        println!("Failed to read input");
+        return;
+    }
+    
+    if confirmation.trim() != "RESET" {
+        println!("Reset cancelled.");
+        security_logger.log_event("RESET_CANCELLED", None, true, "User cancelled application reset");
+        return;
+    }
+    
+    println!("Resetting application...");
+    security_logger.log_event("RESET_INITIATED", None, true, "Application reset initiated");
+    
+    let mut files_removed = 0;
+    let mut errors = Vec::new();
+    
+    // Remove users.json
+    if std::path::Path::new("users.json").exists() {
+        match std::fs::remove_file("users.json") {
+            Ok(_) => {
+                files_removed += 1;
+                println!("✓ Removed users.json");
+            },
+            Err(e) => errors.push(format!("Failed to remove users.json: {}", e))
+        }
+    }
+    
+    // Remove all vault files (*.dat)
+    if let Ok(entries) = std::fs::read_dir(".") {
+        for entry in entries.flatten() {
+            if let Some(filename) = entry.file_name().to_str() {
+                if filename.ends_with(".dat") {
+                    match std::fs::remove_file(&entry.path()) {
+                        Ok(_) => {
+                            files_removed += 1;
+                            println!("✓ Removed {}", filename);
+                        },
+                        Err(e) => errors.push(format!("Failed to remove {}: {}", filename, e))
+                    }
+                }
+            }
+        }
+    }
+    
+    // Remove security.log
+    if std::path::Path::new("security.log").exists() {
+        match std::fs::remove_file("security.log") {
+            Ok(_) => {
+                files_removed += 1;
+                println!("✓ Removed security.log");
+            },
+            Err(e) => errors.push(format!("Failed to remove security.log: {}", e))
+        }
+    }
+    
+    // Report results
+    println!();
+    if errors.is_empty() {
+        println!("✅ Reset complete! Removed {} files.", files_removed);
+        println!("The application is now in its initial state.");
+    } else {
+        println!("⚠️  Reset completed with {} errors:", errors.len());
+        for error in errors {
+            println!("  - {}", error);
+        }
+        println!("Removed {} files successfully.", files_removed);
+    }
+    
+    // Log the completion (this will create a new log file)
+    let final_logger = SecurityLogger::new();
+    final_logger.log_event("RESET_COMPLETED", None, true, &format!("Application reset completed, {} files removed", files_removed));
+}
+
 fn main() -> Result<(), eframe::Error> {
     let args: Vec<String> = std::env::args().collect();
     
@@ -307,7 +391,8 @@ fn run_cli_mode() {
     println!("=== Secure Password Manager ===");
     println!("1: Login");
     println!("2: Register new user");
-    println!("3: Exit");
+    println!("3: Reset application (remove all data)");
+    println!("4: Exit");
     
     let mut choice = String::new();
     if io::stdin().read_line(&mut choice).is_err() {
@@ -334,7 +419,11 @@ fn run_cli_mode() {
                 }
             }
         },
-        "3" => return,
+        "3" => {
+            reset_application(&security_logger);
+            return;
+        },
+        "4" => return,
         _ => {
             println!("Invalid choice");
             return;
