@@ -1,0 +1,20 @@
+# Sensitive data files
+*.dat
+*.json
+security.log
+
+# Build artifacts
+/target
+Cargo.lock
+
+# IDE files
+.vscode/
+.idea/
+
+# Backup files
+*.bak
+*.tmp
+
+# System files
+.DS_Store
+Thumbs.db

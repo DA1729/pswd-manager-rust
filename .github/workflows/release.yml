@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Build release
+      run: cargo build --release
+    
+    - name: Create distribution package
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        mkdir -p dist/secure-password-manager-linux-v$VERSION
+        cp target/release/password_manager dist/secure-password-manager-linux-v$VERSION/
+        cp README.md dist/secure-password-manager-linux-v$VERSION/
+        
+        # Create install script
+        cat > dist/secure-password-manager-linux-v$VERSION/install.sh << 'EOF'
+        #!/bin/bash
+        echo "Installing Secure Password Manager..."
+        mkdir -p ~/.local/bin
+        cp password_manager ~/.local/bin/
+        chmod +x ~/.local/bin/password_manager
+        if ! echo $PATH | grep -q "$HOME/.local/bin"; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+            echo "Added ~/.local/bin to PATH. Restart terminal or run 'source ~/.bashrc'"
+        fi
+        echo "Installation complete! Run 'password_manager' to start."
+        EOF
+        
+        chmod +x dist/secure-password-manager-linux-v$VERSION/install.sh
+        
+        cd dist
+        tar -czf secure-password-manager-linux-v$VERSION.tar.gz secure-password-manager-linux-v$VERSION/
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/*.tar.gz
+        body: |
+          ## Secure Password Manager v${{ github.ref_name }}
+          
+          Production-ready password manager for personal use.
+          
+          ### Features
+          - AES-256-GCM encryption
+          - Argon2id key derivation
+          - Secure memory management
+          - Rate limiting protection
+          - Audit logging
+          
+          ### Installation
+          1. Download `secure-password-manager-linux-v*.tar.gz`
+          2. Extract: `tar -xzf secure-password-manager-linux-v*.tar.gz`
+          3. Install: `cd secure-password-manager-linux-v* && ./install.sh`
+          4. Run: `password_manager`
+          
+          ### Security Notes
+          - Use a strong master password
+          - Keep vault files backed up securely
+          - Review security.log periodically
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
