@@ -1,6 +1,7 @@
 mod crypto;
 mod auth;
 mod security;
+mod gui;
 
 use crypto::{decrypt_json, encrypt_json};
 use auth::{User, UserManager, validate_username, validate_login_password};
@@ -277,7 +278,29 @@ fn login_user(rate_limiter: &mut RateLimiter, security_logger: &SecurityLogger) 
     Err("Login failed".to_string())
 }
 
-fn main() {
+fn main() -> Result<(), eframe::Error> {
+    let args: Vec<String> = std::env::args().collect();
+    
+    if args.iter().any(|arg| arg == "--cli") {
+        run_cli_mode();
+        return Ok(());
+    }
+    
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([800.0, 600.0])
+            .with_min_inner_size([600.0, 400.0]),
+        ..Default::default()
+    };
+    
+    eframe::run_native(
+        "Secure Password Manager",
+        options,
+        Box::new(|_cc| Ok(Box::new(gui::PasswordManagerApp::default()))),
+    )
+}
+
+fn run_cli_mode() {
     let security_logger = SecurityLogger::new();
     let mut rate_limiter = RateLimiter::new(3, 15); // 3 attempts per 15 minutes
     
@@ -504,7 +527,7 @@ fn main() {
 
         "5" => {
             match generate_secure_password_interactive() {
-                Ok(password) => {
+                Ok(_password) => {
                     println!("\nCopy this password and press Enter to continue...");
                     let mut input = String::new();
                     let _ = io::stdin().read_line(&mut input);
